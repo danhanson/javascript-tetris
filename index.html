@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Tetris</title>
+	<meta charset="UTF-8">
+	<style>
+		#board {
+			height:100vh;
+			display:block;
+			padding:0;
+			margin:0 auto;
+			left:0;
+			right:0;
+			position:absolute;
+		}
+		body {
+			overflow:hidden;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="board"></canvas>
+</body>
+<script type="text/javascript">
+
+	var canvas = document.getElementById('board');
+	var BOARD_WIDTH = 9;
+	var BOARD_HEIGHT = 19;
+	var EMPTY_ROW = (1 << (BOARD_WIDTH+1)) + 1; // X000000000X
+	var FULL_ROW = (1 << (BOARD_WIDTH+2)) - 1;  // XXXXXXXXXXX
+	var BOTTOM_ROW = (1 << (BOARD_WIDTH+1)) - 2;// 0xxxxxxxxx0
+
+	function Piece(x, y, grid){
+		this.grid = grid;
+		this.x = x; // how many bits to the left
+		this.y = y; // how many rows down
+	}
+
+	Piece.prototype.get = function(y, x){
+		return (this.grid[y] >> x) & 1;
+	}
+
+	Piece.prototype.rotateRight = function(){
+		var newGrid = [0,0,0,0];
+		for(var y = 0; y < 4; y++){
+			for(var x = 0; x < 4; x++){
+				newGrid[y] |= this.get(x, y) << (3 - x);
+			}
+		}
+		this.grid = newGrid;
+	};
+
+	Piece.prototype.rotateLeft = function(){
+		var newGrid = [0,0,0,0];
+		for(var y = 0; y < 4; y++){
+			for(var x = 0; x < 4; x++){
+				newGrid[y] |= this.get(x, 3 - y) << x;
+			}
+		}
+		this.grid = newGrid;
+	};
+
+	Piece.prototype.left = function(){
+		this.x--;
+	};
+
+	Piece.prototype.right = function(){
+		this.x++;
+	};
+
+	Piece.prototype.up = function(){
+		this.y--;
+	};
+
+	Piece.prototype.down = function(){
+		this.y++;
+	};
+
+	Piece.prototype.collides = function(board){
+		for(var i = 0; i < 4; i++){
+			var row = (this.x >= 0) ? this.grid[i] << this.x : this.grid[i] >> -this.x;
+			if(this.y + i >= 0 && ((board[this.y+i] & row) !== 0)){
+				return true;
+			}
+		}
+		return false;
+	};
+
+	Piece.prototype.place = function(board){
+		for(var i = 0; i < 4; i++){
+			var y = this.y + i;
+			if(y >= 0 && y < BOARD_HEIGHT){
+				board[this.y+i] |= this.grid[i] << this.x;
+			}
+		}
+	};
+
+	Piece.prototype.draw = function(ctx, blockWidth){
+		var y = this.y * blockWidth;
+		for(var i = 0; i < 4; i++){
+			var row = this.grid[i];
+			var x = this.x * blockWidth;
+			while(row != 0){
+				if(row & 1){
+					ctx.fillRect(x, y, blockWidth, blockWidth);
+				}
+				row >>= 1;
+				x += blockWidth;
+			}
+			y += blockWidth;
+		}
+	};
+
+	var pieces = [
+		[2, 2, 2, 2], // line
+		[2, 2, 6, 0], // J
+		[4, 4, 6, 0], // L
+		[0, 6, 3, 0], // Z
+		[0, 3, 6, 0], // S
+		[0, 7, 2, 0], // T
+		[0, 6, 6, 0]  // square
+	];
+
+	var state = {
+		board:[],
+		score:0,
+		running:false,
+		piece:null
+	};
+
+
+	function spawnPiece(){
+		return new Piece(4, -3, pieces[Math.floor(Math.random() * 7)].slice());
+	}
+
+	function draw(){
+		var blockWidth = Math.min(canvas.width / BOARD_WIDTH, canvas.height / BOARD_HEIGHT);
+		canvas.width = blockWidth * (2 + BOARD_WIDTH);
+
+		var ctx = canvas.getContext('2d');
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		var y = 0;
+		ctx.fillStyle = "#000000";
+		for(var i = 0; i < BOARD_HEIGHT; i++){
+			var x = 0;
+			var row = state.board[i];
+			while(row !== 0){
+				if(row & 1){
+					ctx.fillRect(x, y, blockWidth, blockWidth);
+				}
+				x += blockWidth;
+				row >>= 1;
+			}
+			y += blockWidth;
+		}
+		ctx.fillStyle = "#FF0000";
+		state.piece.draw(ctx, blockWidth);
+	}
+
+	function resetBoard(){
+		for(var i = 0; i < BOARD_HEIGHT; i++){
+			state.board[i] = EMPTY_ROW;
+		}
+		state.board[BOARD_HEIGHT] = BOTTOM_ROW;
+		state.piece = spawnPiece();
+		draw();
+	}
+
+	function step(){
+		var piece = state.piece;
+		var board = state.board;
+		piece.down();
+		if(piece.collides(board)){
+			piece.up();
+			piece.place(board);
+			var dst = BOARD_HEIGHT;
+			for(var src = BOARD_HEIGHT; src >= 0; src--){
+				if(board[src] === FULL_ROW){
+					state.score++;
+					continue;
+				}
+				board[dst--] = board[src];
+			}
+			while(dst >= 0){
+				board[dst--] = EMPTY_ROW;
+			}
+			state.piece = spawnPiece();
+		}
+		draw();
+	}
+
+	function left(){
+		var piece = state.piece;
+		var board = state.board;
+		piece.left();
+		if(piece.collides(board)){
+			piece.right();
+		}
+	}
+
+	function right(){
+		var piece = state.piece;
+		var board = state.board;
+		piece.right();
+		if(piece.collides(board)){
+			piece.left();
+		}
+	}
+
+	function rotate(){
+		var piece = state.piece;
+		var board = state.board;
+		piece.rotateRight();
+		if(piece.collides(board)){ // if collision occurs on rotate, try shifting piece
+			piece.left();
+			if(!piece.collides(board)){
+				return;
+			}
+			piece.right();
+			for(var i = 0; i < 4; i++){
+				piece.right();
+				if(!piece.collides(board)){
+					return;
+				}
+			}
+			piece.rotateLeft(); // failed to rotate
+		}
+	}
+
+	var interval = setInterval(step, 500);
+
+	function down(){
+		clearInterval(interval);
+		step();
+		interval = setInterval(step, 500);
+	}
+
+	function handleInput(event){
+		event.preventDefault();
+		switch(event.keyCode){
+			case 37: // left
+				left();
+				break;
+			case 38:
+				rotate();
+				break;
+			case 39: // right
+				right();
+				break;
+			case 40:
+				down();
+				break;
+		}
+		draw();
+	}
+
+	document.addEventListener('keydown', handleInput);
+	resetBoard();
+
+</script>
+</html>
+
